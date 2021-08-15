@@ -50,11 +50,21 @@ int patchTwoIpLocation = 0x4C13B6;
 IP_ADAPTER_ADDRESSES pAddresses[10];
 int selectedIndex = 0;
 
+HANDLE hLogFile;
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 void OpenAdapterSelectDialog(HINSTANCE hInstDll);
 
 extern __declspec(dllexport) INT APIENTRY DllMain(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved)
 {
+    hLogFile = CreateFile(TEXT("log.txt"),
+                       GENERIC_WRITE,
+                       0,
+                       NULL,
+                       CREATE_NEW,
+                       FILE_ATTRIBUTE_NORMAL,
+                       NULL);
+
     switch (fdwReason)
     {
         case DLL_PROCESS_ATTACH:
@@ -68,6 +78,15 @@ extern __declspec(dllexport) INT APIENTRY DllMain(HINSTANCE hInstDll, DWORD fdwR
 
 void OpenAdapterSelectDialog(HINSTANCE hInstDll)
 {
+    char beforeUI[33] = "Before Adapter Select Creation\n";
+    int bytesWritten = 0;
+    WriteFile(
+      hLogFile,
+      beforeUI,
+      sizeof(beforeUI),
+      &bytesWritten,
+      NULL);
+
     const TCHAR *CLASS_NAME = TEXT("Adapter Select");
 
     WNDCLASS wc = { 0 };
@@ -114,6 +133,15 @@ void OpenAdapterSelectDialog(HINSTANCE hInstDll)
 
     PULONG size = sizeof(pAddresses);
 
+    char beforeGetAdapters[] = "Before GetAdaptersAddresses call\n";
+    bytesWritten = 0;
+    WriteFile(
+      hLogFile,
+      beforeGetAdapters,
+      sizeof(beforeGetAdapters),
+      &bytesWritten,
+      NULL);
+
     ULONG status = GetAdaptersAddresses(AF_INET, 0, NULL, pAddresses, &size);
 
     //keep the start of the list in pAddresses
@@ -121,6 +149,22 @@ void OpenAdapterSelectDialog(HINSTANCE hInstDll)
 
     while (pCurrAddresses)
     {
+        bytesWritten = 0;
+        WriteFile(
+          hLogFile,
+          pCurrAddresses->FriendlyName,
+          wcslen(pCurrAddresses->FriendlyName),
+          &bytesWritten,
+          NULL);
+        
+        char newLine[] = "\n";
+        WriteFile(
+          hLogFile,
+          newLine,
+          wcslen(newLine),
+          &bytesWritten,
+          NULL);
+
         SendMessage(hWndListBox,(UINT) LB_ADDSTRING,(WPARAM) 0,(LPARAM) pCurrAddresses->FriendlyName);
 
         pCurrAddresses = pCurrAddresses->Next;
@@ -149,6 +193,8 @@ void OpenAdapterSelectDialog(HINSTANCE hInstDll)
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
+
+    CloseHandle(hLogFile);
 }
 
 //https://github.com/ianpatt/f4se/blob/34dd7e92227e2c027e3910631ac7b7478c3fe6c5/f4se_common/SafeWrite.cpp
