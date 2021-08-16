@@ -54,16 +54,11 @@ HANDLE hLogFile;
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 void OpenAdapterSelectDialog(HINSTANCE hInstDll);
+wchar_t* adapterAddressToString(IP_ADAPTER_ADDRESSES adapterAddress);
 
 extern __declspec(dllexport) INT APIENTRY DllMain(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved)
 {
-    hLogFile = CreateFile(TEXT("log.txt"),
-                       GENERIC_WRITE,
-                       0,
-                       NULL,
-                       CREATE_NEW,
-                       FILE_ATTRIBUTE_NORMAL,
-                       NULL);
+    hLogFile = fopen("log.txt", "w, ccs=UTF-8");
 
     switch (fdwReason)
     {
@@ -78,14 +73,9 @@ extern __declspec(dllexport) INT APIENTRY DllMain(HINSTANCE hInstDll, DWORD fdwR
 
 void OpenAdapterSelectDialog(HINSTANCE hInstDll)
 {
-    char beforeUI[33] = "Before Adapter Select Creation\n";
+    wchar_t beforeUI[33] = L"Before Adapter Select Creation\n";
     int bytesWritten = 0;
-    WriteFile(
-      hLogFile,
-      beforeUI,
-      sizeof(beforeUI),
-      &bytesWritten,
-      NULL);
+    fwrite(beforeUI, sizeof(wchar_t), wcslen(beforeUI), hLogFile);
 
     const TCHAR *CLASS_NAME = TEXT("Adapter Select");
 
@@ -133,37 +123,25 @@ void OpenAdapterSelectDialog(HINSTANCE hInstDll)
 
     PULONG size = sizeof(pAddresses);
 
-    char beforeGetAdapters[] = "Before GetAdaptersAddresses call\n";
-    bytesWritten = 0;
-    WriteFile(
-      hLogFile,
-      beforeGetAdapters,
-      sizeof(beforeGetAdapters),
-      &bytesWritten,
-      NULL);
+    wchar_t beforeGetAdapters[] = L"Before GetAdaptersAddresses call\n";
+    fwrite(beforeGetAdapters, sizeof(wchar_t), wcslen(beforeGetAdapters), hLogFile);
 
     ULONG status = GetAdaptersAddresses(AF_INET, 0, NULL, pAddresses, &size);
+
+    WriteFile(
+      hLogFile,
+      status,
+      sizeof(status),
+      &bytesWritten,
+      NULL);
 
     //keep the start of the list in pAddresses
     IP_ADAPTER_ADDRESSES *pCurrAddresses = pAddresses;
 
     while (pCurrAddresses)
     {
-        bytesWritten = 0;
-        WriteFile(
-          hLogFile,
-          pCurrAddresses->FriendlyName,
-          wcslen(pCurrAddresses->FriendlyName),
-          &bytesWritten,
-          NULL);
-        
-        char newLine[] = "\n";
-        WriteFile(
-          hLogFile,
-          newLine,
-          wcslen(newLine),
-          &bytesWritten,
-          NULL);
+        wchar_t *addressLog = adapterAddressToString(*pCurrAddresses);
+        fwrite(addressLog, sizeof(wchar_t), wcslen(addressLog), hLogFile);
 
         SendMessage(hWndListBox,(UINT) LB_ADDSTRING,(WPARAM) 0,(LPARAM) pCurrAddresses->FriendlyName);
 
@@ -194,7 +172,7 @@ void OpenAdapterSelectDialog(HINSTANCE hInstDll)
         DispatchMessage(&msg);
     }
 
-    CloseHandle(hLogFile);
+    fclose(hLogFile);
 }
 
 //https://github.com/ianpatt/f4se/blob/34dd7e92227e2c027e3910631ac7b7478c3fe6c5/f4se_common/SafeWrite.cpp
@@ -247,4 +225,37 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
         break;
     }
     return DefWindowProc(hwnd, uMsg, wParam, lParam);
+}
+
+
+wchar_t* adapterAddressToString(IP_ADAPTER_ADDRESSES adapterAddress)
+{
+    char formatAdapterLog[] =
+    "Friendly Name: %ls\n"
+    "Physical Address: %x\n"
+    "Physical Address Length: %d\n"
+    "Ipv4 Enabled: %d\n"
+    "Ipv6 Enabled: %d\n"
+    "------\n";
+
+    int size = _snprintf(NULL, 0, formatAdapterLog,
+        adapterAddress.FriendlyName,
+        adapterAddress.PhysicalAddress,
+        adapterAddress.PhysicalAddressLength,
+        adapterAddress.Ipv4Enabled,
+        adapterAddress.Ipv6Enabled);
+    wchar_t * a = malloc(size + 1);
+    sprintf(a, formatAdapterLog,
+        adapterAddress.FriendlyName,
+        adapterAddress.PhysicalAddress,
+        adapterAddress.PhysicalAddressLength,
+        adapterAddress.Ipv4Enabled,
+        adapterAddress.Ipv6Enabled);
+
+    const wchar_t *pwcsName;
+    int nChars = MultiByteToWideChar(CP_ACP, 0, a, -1, NULL, 0);
+    pwcsName = malloc((nChars + 1)*sizeof(wchar_t)); //Is the +1 needed for null termination?
+    MultiByteToWideChar(CP_ACP, 0, a, -1, pwcsName, nChars);
+
+    return pwcsName;
 }
