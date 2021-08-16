@@ -232,7 +232,7 @@ wchar_t* adapterAddressToString(IP_ADAPTER_ADDRESSES adapterAddress)
 {
     char formatAdapterLog[] =
     "Friendly Name: %ls\n"
-    "Physical Address: %x\n"
+    "Physical Address: %x %x %x %x %x %x %x %x\n"
     "Physical Address Length: %d\n"
     "Ipv4 Enabled: %d\n"
     "Ipv6 Enabled: %d\n"
@@ -240,14 +240,28 @@ wchar_t* adapterAddressToString(IP_ADAPTER_ADDRESSES adapterAddress)
 
     int size = _snprintf(NULL, 0, formatAdapterLog,
         adapterAddress.FriendlyName,
-        adapterAddress.PhysicalAddress,
+        adapterAddress.PhysicalAddress[0],
+        adapterAddress.PhysicalAddress[1],
+        adapterAddress.PhysicalAddress[2],
+        adapterAddress.PhysicalAddress[3],
+        adapterAddress.PhysicalAddress[4],
+        adapterAddress.PhysicalAddress[5],
+        adapterAddress.PhysicalAddress[6],
+        adapterAddress.PhysicalAddress[7],
         adapterAddress.PhysicalAddressLength,
         adapterAddress.Ipv4Enabled,
         adapterAddress.Ipv6Enabled);
     wchar_t * a = malloc(size + 1);
     sprintf(a, formatAdapterLog,
         adapterAddress.FriendlyName,
-        adapterAddress.PhysicalAddress,
+        adapterAddress.PhysicalAddress[0],
+        adapterAddress.PhysicalAddress[1],
+        adapterAddress.PhysicalAddress[2],
+        adapterAddress.PhysicalAddress[3],
+        adapterAddress.PhysicalAddress[4],
+        adapterAddress.PhysicalAddress[5],
+        adapterAddress.PhysicalAddress[6],
+        adapterAddress.PhysicalAddress[7],
         adapterAddress.PhysicalAddressLength,
         adapterAddress.Ipv4Enabled,
         adapterAddress.Ipv6Enabled);
