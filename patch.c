@@ -183,9 +183,9 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
                 IP_ADAPTER_ADDRESSES addr = pAddresses[selectedIndex];
 
-                BYTE *physAddr = addr.PhysicalAddress;
+                BYTE *ipAddrArray = addr.FirstUnicastAddress->Address.lpSockaddr->sa_data;
 
-                int ipAddress = (physAddr[2]) | (physAddr[3] << 8) | (physAddr[4] << 16) | (physAddr[5] << 24);
+                int ipAddress = (ipAddrArray[2]) | (ipAddrArray[3] << 8) | (ipAddrArray[4] << 16) | (ipAddrArray[5] << 24);
 
                 int netmask;
 
