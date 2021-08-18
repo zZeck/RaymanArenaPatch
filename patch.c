@@ -47,7 +47,7 @@ char patchTwo[] = {
 };
 int patchTwoIpLocation = 0x4C13B6;
 
-IP_ADAPTER_ADDRESSES pAddresses[10];
+IP_ADAPTER_ADDRESSES *pAddresses;
 int selectedIndex = 0;
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
@@ -112,9 +112,13 @@ void OpenAdapterSelectDialog(HINSTANCE hInstDll)
         hInstDll,
         NULL);
 
-    PULONG size = sizeof(pAddresses);
+    PULONG size = 0;
 
-    ULONG status = GetAdaptersAddresses(AF_INET, 0, NULL, pAddresses, &size);
+    ULONG status = GetAdaptersAddresses(AF_INET, 0, NULL, NULL, &size);
+
+    pAddresses = malloc(size);
+
+    status = GetAdaptersAddresses(AF_INET, 0, NULL, pAddresses, &size);
 
     //keep the start of the list in pAddresses
     IP_ADAPTER_ADDRESSES *pCurrAddresses = pAddresses;
@@ -166,6 +170,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     switch (uMsg)
     {
     case WM_DESTROY:
+        free(pAddresses);
         PostQuitMessage(0);
         return 0;
 
@@ -181,15 +186,19 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
                 SafeWriteBuf(patchOneStart, patchOne, sizeof(patchOne));
                 SafeWriteBuf(patchTwoStart, patchTwo, sizeof(patchTwo));
 
-                IP_ADAPTER_ADDRESSES addr = pAddresses[selectedIndex];
+                IP_ADAPTER_ADDRESSES *addr = pAddresses;
 
-                BYTE *ipAddrArray = addr.FirstUnicastAddress->Address.lpSockaddr->sa_data;
+                for(int i = 0; i < selectedIndex; i++){
+                    addr = addr->Next;
+                }
+
+                BYTE *ipAddrArray = addr->FirstUnicastAddress->Address.lpSockaddr->sa_data;
 
                 int ipAddress = (ipAddrArray[2]) | (ipAddrArray[3] << 8) | (ipAddrArray[4] << 16) | (ipAddrArray[5] << 24);
 
                 int netmask;
 
-                ConvertLengthToIpv4Mask(addr.FirstUnicastAddress->OnLinkPrefixLength, &netmask);
+                ConvertLengthToIpv4Mask(addr->FirstUnicastAddress->OnLinkPrefixLength, &netmask);
 
                 SafeWriteBuf(patchOneIpLocation, &ipAddress, sizeof(ipAddress));
                 SafeWriteBuf(patchOneNetMaskLocation, &netmask, sizeof(netmask));
