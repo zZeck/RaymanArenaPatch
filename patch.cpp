@@ -10,7 +10,15 @@
 #include <windows.h>
 #include <commctrl.h>
 #include <iphlpapi.h>
+#include <winnls.h>
 #include <stdio.h>
+#include <iostream>
+#include <fstream>
+#include <filesystem>
+#include <locale>
+#include <codecvt>
+#include <string>
+#include <vector>
 
 int patchOneStart = 0x4C14E0;
 char patchOne[] = {
@@ -52,6 +60,9 @@ int selectedIndex = 0;
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 void OpenAdapterSelectDialog(HINSTANCE hInstDll);
+bool LoadPrior();
+void LoadAdapters();
+void Patch(PIP_ADAPTER_UNICAST_ADDRESS_LH addr);
 
 extern __declspec(dllexport) INT APIENTRY DllMain(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved)
 {
@@ -59,11 +70,72 @@ extern __declspec(dllexport) INT APIENTRY DllMain(HINSTANCE hInstDll, DWORD fdwR
     {
         case DLL_PROCESS_ATTACH:
         {
-            OpenAdapterSelectDialog(hInstDll);
+            LoadAdapters();
+            if(!LoadPrior())
+                OpenAdapterSelectDialog(hInstDll);
+            delete(pAddresses);
 	        break;
         }
     }
     return TRUE;
+}
+
+bool LoadPrior()
+{
+    std::wifstream settings(std::filesystem::path("adapter.txt"));
+    settings.imbue(std::locale(settings.getloc(), new std::codecvt_utf8_utf16<wchar_t, 0x10FFFF, std::consume_header>));
+
+    std::wstring line;
+    std::getline(settings, line);
+    settings.close();
+
+    const auto normalizedSize = NormalizeString(NORM_FORM::NormalizationC, line.c_str(), -1, nullptr, 0);
+
+    std::vector<wchar_t> normalizedString(normalizedSize);
+    const auto error = NormalizeString(NORM_FORM::NormalizationC, line.c_str(), -1, normalizedString.data(), normalizedSize);
+
+    std::wstring adapterName(normalizedString.data());
+
+    auto pCurrAddresses = pAddresses;
+
+    while (pCurrAddresses)
+    {
+        std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t> converter;
+        //convert friendlyname to utf8
+        auto utf8 = converter.to_bytes(pCurrAddresses->FriendlyName);
+
+        //convert back to utf16
+        auto utf16 = converter.from_bytes(utf8);
+
+        //normalize
+        const auto normalizedFriendlyNameSize = NormalizeString(NORM_FORM::NormalizationC, utf16.c_str(), -1, nullptr, 0);
+
+        std::vector<wchar_t> normalizedFriendlynameString(normalizedFriendlyNameSize);
+        const auto friendlyNameError = NormalizeString(NORM_FORM::NormalizationC, utf16.c_str(), -1, normalizedFriendlynameString.data(), normalizedFriendlyNameSize);
+
+        std::wstring friendlyName(normalizedFriendlynameString.data());
+
+        //wstring compare with adapterName
+        if(adapterName == friendlyName)
+        {
+            Patch(pCurrAddresses->FirstUnicastAddress);
+            return true;
+        }
+
+        pCurrAddresses = pCurrAddresses->Next;
+    }
+    return false;
+}
+
+void LoadAdapters()
+{
+    ULONG size = 0;
+
+    auto status = GetAdaptersAddresses(AF_INET, 0, NULL, NULL, &size);
+
+    pAddresses = new IP_ADAPTER_ADDRESSES[size];
+
+    status = GetAdaptersAddresses(AF_INET, 0, NULL, pAddresses, &size);
 }
 
 void OpenAdapterSelectDialog(HINSTANCE hInstDll)
@@ -78,7 +150,7 @@ void OpenAdapterSelectDialog(HINSTANCE hInstDll)
 
     RegisterClass(&wc);
 
-    HWND hwnd = CreateWindowEx(
+    auto hwnd = CreateWindowEx(
     0,
     CLASS_NAME,
     L"Select Adapter",
@@ -101,7 +173,7 @@ void OpenAdapterSelectDialog(HINSTANCE hInstDll)
     int nheight = 300;
     HWND hwndParent =  hwnd;
 
-    HWND hWndListBox = CreateWindowEx(
+    auto hWndListBox = CreateWindowEx(
         0,
         WC_LISTBOX,
         TEXT(""),
@@ -112,16 +184,8 @@ void OpenAdapterSelectDialog(HINSTANCE hInstDll)
         hInstDll,
         NULL);
 
-    PULONG size = 0;
-
-    ULONG status = GetAdaptersAddresses(AF_INET, 0, NULL, NULL, &size);
-
-    pAddresses = malloc(size);
-
-    status = GetAdaptersAddresses(AF_INET, 0, NULL, pAddresses, &size);
-
     //keep the start of the list in pAddresses
-    IP_ADAPTER_ADDRESSES *pCurrAddresses = pAddresses;
+    auto *pCurrAddresses = pAddresses;
 
     while (pCurrAddresses)
     {
@@ -158,11 +222,34 @@ void OpenAdapterSelectDialog(HINSTANCE hInstDll)
 //https://github.com/ianpatt/f4se/blob/34dd7e92227e2c027e3910631ac7b7478c3fe6c5/f4se_common/SafeWrite.cpp
 void SafeWriteBuf(uintptr_t addr, void * data, size_t len)
 {
-	int	oldProtect;
+	DWORD oldProtect;
 
 	VirtualProtect((void *)addr, len, PAGE_EXECUTE_READWRITE, &oldProtect);
 	memcpy((void *)addr, data, len);
 	VirtualProtect((void *)addr, len, oldProtect, &oldProtect);
+}
+
+void Patch(PIP_ADAPTER_UNICAST_ADDRESS_LH addr)
+{
+    SafeWriteBuf(patchOneStart, patchOne, sizeof(patchOne));
+    SafeWriteBuf(patchTwoStart, patchTwo, sizeof(patchTwo));
+
+    auto ipAddrArray = (unsigned char *)addr->Address.lpSockaddr->sa_data;
+
+    unsigned int octal0 = ipAddrArray[5] << 24;
+    unsigned int octal1 = ipAddrArray[4] << 16;
+    unsigned int octal2 = ipAddrArray[3] << 8;
+    unsigned int octal3 = ipAddrArray[2] << 0;
+
+    auto ipAddress = octal0 | octal1 | octal2 | octal3;
+
+    ULONG netmask;
+
+    ConvertLengthToIpv4Mask(addr->OnLinkPrefixLength, &netmask);
+
+    SafeWriteBuf(patchOneIpLocation, &ipAddress, sizeof(ipAddress));
+    SafeWriteBuf(patchOneNetMaskLocation, &netmask, sizeof(netmask));
+    SafeWriteBuf(patchTwoIpLocation, &ipAddress, sizeof(ipAddress));
 }
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
@@ -170,39 +257,31 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
     switch (uMsg)
     {
     case WM_DESTROY:
-        free(pAddresses);
         PostQuitMessage(0);
         return 0;
 
     case WM_COMMAND:
-        u_int command = HIWORD(wParam);
-        HWND childHWnd = lParam;
+        auto command = HIWORD(wParam);
+        auto childHWnd = (HWND)(lParam);
         switch (command)
         {
             case(LBN_SELCHANGE):
                 selectedIndex = SendMessage(childHWnd, (UINT) LB_GETCURSEL, (WPARAM) 0, (LPARAM) 0);
                 break;
            case(BN_CLICKED):
-                SafeWriteBuf(patchOneStart, patchOne, sizeof(patchOne));
-                SafeWriteBuf(patchTwoStart, patchTwo, sizeof(patchTwo));
-
-                IP_ADAPTER_ADDRESSES *addr = pAddresses;
+                auto addr = pAddresses;
 
                 for(int i = 0; i < selectedIndex; i++){
                     addr = addr->Next;
                 }
 
-                BYTE *ipAddrArray = addr->FirstUnicastAddress->Address.lpSockaddr->sa_data;
+                Patch(addr->FirstUnicastAddress);
 
-                int ipAddress = (ipAddrArray[2]) | (ipAddrArray[3] << 8) | (ipAddrArray[4] << 16) | (ipAddrArray[5] << 24);
+                std::wofstream settings(std::filesystem::path("adapter.txt"));
+                settings.imbue(std::locale(settings.getloc(), new std::codecvt_utf8_utf16<wchar_t, 0x10FFFF, std::consume_header>));
 
-                int netmask;
-
-                ConvertLengthToIpv4Mask(addr->FirstUnicastAddress->OnLinkPrefixLength, &netmask);
-
-                SafeWriteBuf(patchOneIpLocation, &ipAddress, sizeof(ipAddress));
-                SafeWriteBuf(patchOneNetMaskLocation, &netmask, sizeof(netmask));
-                SafeWriteBuf(patchTwoIpLocation, &ipAddress, sizeof(ipAddress));
+                settings << addr->FriendlyName << std::endl;
+                settings.close();
 
                 PostMessage(hwnd, WM_CLOSE, 0, 0);
                 break;
