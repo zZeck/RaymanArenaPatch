@@ -11,6 +11,7 @@
 #include <commctrl.h>
 #include <iphlpapi.h>
 #include <winnls.h>
+#include <pathcch.h>
 #include <stdio.h>
 #include <iostream>
 #include <fstream>
@@ -20,8 +21,8 @@
 #include <string>
 #include <vector>
 
-int patchOneStart = 0x4C14E0;
-char patchOne[] = {
+constexpr unsigned int patchOneStart = 0x4C14E0;
+constexpr unsigned char patchOne[] = {
 0x30, 0x0F, 0x84, 0xDE, 0x01, 0x00, 0x00, 0x53, 0x57, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
@@ -43,20 +44,22 @@ char patchOne[] = {
 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
 0x90, 0x90, 0x90, 0x90, 0x90, 0x8B, 0x4C, 0x24, 0x38, 0x51, 0xFF, 0x15, 0xE0, 0xD3, 0x5A, 0x00,
 };
-int patchOneIpLocation = 0x4C1556;
-int patchOneNetMaskLocation = 0x4C155B;
+constexpr unsigned int patchOneIpLocation = 0x4C1556;
+constexpr unsigned int patchOneNetMaskLocation = 0x4C155B;
 
-int patchTwoStart = 0x4c1380;
-char patchTwo[] = {
+constexpr unsigned int patchTwoStart = 0x4c1380;
+constexpr unsigned char patchTwo[] = {
 0x9C, 0x24, 0x98, 0x02, 0x00, 0x00, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
 0x90, 0x90, 0x90, 0x90, 0x90, 0xB8, 0xC0, 0xA8, 0x01, 0x06, 0x68, 0x81, 0x00, 0x00, 0x00, 0x50,
 };
-int patchTwoIpLocation = 0x4C13B6;
+constexpr unsigned int patchTwoIpLocation = 0x4C13B6;
 
 IP_ADAPTER_ADDRESSES *pAddresses;
 int selectedIndex = 0;
+
+std::filesystem::path configFilePath;
 
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 void OpenAdapterSelectDialog(HINSTANCE hInstDll);
@@ -70,6 +73,11 @@ extern __declspec(dllexport) INT APIENTRY DllMain(HINSTANCE hInstDll, DWORD fdwR
     {
         case DLL_PROCESS_ATTACH:
         {
+            wchar_t path[MAX_PATH];
+            const auto getModuleError = GetModuleFileNameW(nullptr, path, MAX_PATH);
+            configFilePath = std::filesystem::path(path);
+            configFilePath.remove_filename();
+            configFilePath.append("arenaPatch.cfg");
             LoadAdapters();
             if(!LoadPrior())
                 OpenAdapterSelectDialog(hInstDll);
@@ -82,7 +90,7 @@ extern __declspec(dllexport) INT APIENTRY DllMain(HINSTANCE hInstDll, DWORD fdwR
 
 bool LoadPrior()
 {
-    std::wifstream settings(std::filesystem::path("adapter.txt"));
+    std::wifstream settings(configFilePath);
     settings.imbue(std::locale(settings.getloc(), new std::codecvt_utf8_utf16<wchar_t, 0x10FFFF, std::consume_header>));
 
     std::wstring line;
@@ -101,13 +109,19 @@ bool LoadPrior()
     while (pCurrAddresses)
     {
         std::wstring_convert<std::codecvt_utf8_utf16<wchar_t>, wchar_t> converter;
-        //convert friendlyname to utf8
-        auto utf8 = converter.to_bytes(pCurrAddresses->FriendlyName);
+        //convert friendlyname to utf8.
+        //windows does not usually validate utf16 (for example with file paths), I assume it doesn't for the FriendlyName.
+        //roundtrip the string to utf8 and back to utf16 with default char generated for bad surrogates and other garbage.
+        //that way it will match what is saved in the file
+        //though, I'm not sure how the codecvt handles bad chars, and it's deprecated
+        //should have used the windows os converter functions
+        const auto utf8 = converter.to_bytes(pCurrAddresses->FriendlyName);
 
         //convert back to utf16
-        auto utf16 = converter.from_bytes(utf8);
+        const auto utf16 = converter.from_bytes(utf8);
 
-        //normalize
+        //normalize, so comparison will work.
+        //If other programs edit the text, there is no guarantee the normalization will match what was saved in the friendly name
         const auto normalizedFriendlyNameSize = NormalizeString(NORM_FORM::NormalizationC, utf16.c_str(), -1, nullptr, 0);
 
         std::vector<wchar_t> normalizedFriendlynameString(normalizedFriendlyNameSize);
@@ -115,7 +129,7 @@ bool LoadPrior()
 
         std::wstring friendlyName(normalizedFriendlynameString.data());
 
-        //wstring compare with adapterName
+        //== is just going to compare ordinals/wchar_ts/code units, so normalization needed first
         if(adapterName == friendlyName)
         {
             Patch(pCurrAddresses->FirstUnicastAddress);
@@ -129,18 +143,18 @@ bool LoadPrior()
 
 void LoadAdapters()
 {
-    ULONG size = 0;
+    unsigned long size = 0;
 
-    auto status = GetAdaptersAddresses(AF_INET, 0, NULL, NULL, &size);
+    const auto statusGetSize = GetAdaptersAddresses(AF_INET, 0, nullptr, nullptr, &size);
 
     pAddresses = new IP_ADAPTER_ADDRESSES[size];
 
-    status = GetAdaptersAddresses(AF_INET, 0, NULL, pAddresses, &size);
+    const auto status = GetAdaptersAddresses(AF_INET, 0, nullptr, pAddresses, &size);
 }
 
-void OpenAdapterSelectDialog(HINSTANCE hInstDll)
+void OpenAdapterSelectDialog(const HINSTANCE hInstDll)
 {
-    const TCHAR *CLASS_NAME = TEXT("Adapter Select");
+    const auto CLASS_NAME = L"Adapter Select";
 
     WNDCLASS wc = { 0 };
 
@@ -159,10 +173,10 @@ void OpenAdapterSelectDialog(HINSTANCE hInstDll)
     CW_USEDEFAULT,
     400,
     400,
-    NULL,
-    NULL,
+    nullptr,
+    nullptr,
     hInstDll,
-    NULL
+    nullptr
     );
 
     ShowWindow(hwnd, SW_SHOW);
@@ -171,7 +185,6 @@ void OpenAdapterSelectDialog(HINSTANCE hInstDll)
     int ypos = 30;
     int nwidth = 340;
     int nheight = 300;
-    HWND hwndParent =  hwnd;
 
     auto hWndListBox = CreateWindowEx(
         0,
@@ -179,33 +192,33 @@ void OpenAdapterSelectDialog(HINSTANCE hInstDll)
         TEXT(""),
         WS_VISIBLE|WS_CHILD|WS_VSCROLL|LBS_NOTIFY,
         xpos, ypos, nwidth, nheight,
-        hwndParent,
-        NULL,
+        hwnd,
+        nullptr,
         hInstDll,
-        NULL);
+        nullptr);
 
     //keep the start of the list in pAddresses
-    auto *pCurrAddresses = pAddresses;
+    auto pCurrAddresses = pAddresses;
 
     while (pCurrAddresses)
     {
-        SendMessage(hWndListBox,(UINT) LB_ADDSTRING,(WPARAM) 0,(LPARAM) pCurrAddresses->FriendlyName);
+        SendMessageW(hWndListBox,(UINT) LB_ADDSTRING,(WPARAM) 0,(LPARAM) pCurrAddresses->FriendlyName);
 
         pCurrAddresses = pCurrAddresses->Next;
     }
 
-    SendMessage(hWndListBox, LB_SETCURSEL, (WPARAM)0, (LPARAM)0);
+    SendMessageW(hWndListBox, LB_SETCURSEL, (WPARAM)0, (LPARAM)0);
 
-    HWND hwndButton = CreateWindowEx(
+    auto hwndButton = CreateWindowExW(
         0,
-        TEXT("BUTTON"),
-        TEXT("OK"),
+        L"BUTTON",
+        L"OK",
         WS_TABSTOP | WS_VISIBLE | WS_CHILD | BS_DEFPUSHBUTTON,
         163,
         320,
         75,
         23,
-        hwndParent,
+        hwnd,
         NULL,
         hInstDll,
         NULL);
@@ -220,7 +233,7 @@ void OpenAdapterSelectDialog(HINSTANCE hInstDll)
 }
 
 //https://github.com/ianpatt/f4se/blob/34dd7e92227e2c027e3910631ac7b7478c3fe6c5/f4se_common/SafeWrite.cpp
-void SafeWriteBuf(uintptr_t addr, void * data, size_t len)
+void SafeWriteBuf(const uintptr_t addr, const void * data, const size_t len)
 {
 	DWORD oldProtect;
 
@@ -229,7 +242,7 @@ void SafeWriteBuf(uintptr_t addr, void * data, size_t len)
 	VirtualProtect((void *)addr, len, oldProtect, &oldProtect);
 }
 
-void Patch(PIP_ADAPTER_UNICAST_ADDRESS_LH addr)
+void Patch(const PIP_ADAPTER_UNICAST_ADDRESS_LH addr)
 {
     SafeWriteBuf(patchOneStart, patchOne, sizeof(patchOne));
     SafeWriteBuf(patchTwoStart, patchTwo, sizeof(patchTwo));
@@ -243,7 +256,7 @@ void Patch(PIP_ADAPTER_UNICAST_ADDRESS_LH addr)
 
     auto ipAddress = octal0 | octal1 | octal2 | octal3;
 
-    ULONG netmask;
+    unsigned long netmask;
 
     ConvertLengthToIpv4Mask(addr->OnLinkPrefixLength, &netmask);
 
@@ -252,7 +265,7 @@ void Patch(PIP_ADAPTER_UNICAST_ADDRESS_LH addr)
     SafeWriteBuf(patchTwoIpLocation, &ipAddress, sizeof(ipAddress));
 }
 
-LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
+LRESULT CALLBACK WindowProc(const HWND hwnd, const UINT uMsg, const WPARAM wParam, const LPARAM lParam)
 {
     switch (uMsg)
     {
@@ -277,7 +290,7 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam)
 
                 Patch(addr->FirstUnicastAddress);
 
-                std::wofstream settings(std::filesystem::path("adapter.txt"));
+                std::wofstream settings(configFilePath);
                 settings.imbue(std::locale(settings.getloc(), new std::codecvt_utf8_utf16<wchar_t, 0x10FFFF, std::consume_header>));
 
                 settings << addr->FriendlyName << std::endl;
