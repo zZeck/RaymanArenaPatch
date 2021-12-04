@@ -1,6 +1,6 @@
 In the visual studio native tools command prompt (or similar environment):
 
-cl.exe /Zi /LD patch.c /link /OUT:arenapatch.asi /DEBUG user32.lib IPHLPAPI.lib Ws2_32.lib
+cl.exe /std:c++17 /Zi /LD patch.cpp /link /OUT:arenapatch.asi user32.lib IPHLPAPI.lib Ws2_32.lib
 
 Use [Ultimate Asi Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader), with rayman arena and put arenapatch.asi into the plugins directory.
 
