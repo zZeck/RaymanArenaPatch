@@ -104,7 +104,11 @@ extern __declspec(dllexport) INT APIENTRY DllMain(HINSTANCE hInstDll, DWORD fdwR
 void Discord()
 {
     discord::ClientId CLIENT_ID(983113098980364359);
-    auto result = discord::Core::Create(CLIENT_ID, DiscordCreateFlags_Default, &core);
+    auto result = discord::Core::Create(CLIENT_ID, EDiscordCreateFlags::DiscordCreateFlags_NoRequireDiscord, &core);
+
+    if(core == nullptr) {
+        return;
+    }
 
     discord::Activity activity{};
     activity.SetType(discord::ActivityType::Playing);
