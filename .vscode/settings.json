@@ -51,6 +51,25 @@
         "xutility": "cpp",
         "codecvt": "cpp",
         "cctype": "cpp",
-        "string": "cpp"
+        "string": "cpp",
+        "thread": "cpp",
+        "array": "cpp",
+        "atomic": "cpp",
+        "bit": "cpp",
+        "charconv": "cpp",
+        "clocale": "cpp",
+        "compare": "cpp",
+        "csignal": "cpp",
+        "format": "cpp",
+        "forward_list": "cpp",
+        "functional": "cpp",
+        "iterator": "cpp",
+        "map": "cpp",
+        "optional": "cpp",
+        "sstream": "cpp",
+        "stop_token": "cpp",
+        "unordered_map": "cpp",
+        "xhash": "cpp",
+        "xtree": "cpp"
     }
 }

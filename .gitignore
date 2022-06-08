@@ -5,3 +5,4 @@
 *.exp
 *.exe
 *.obj
+/discord

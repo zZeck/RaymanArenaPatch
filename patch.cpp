@@ -20,6 +20,8 @@
 #include <codecvt>
 #include <string>
 #include <vector>
+#include <thread>
+#include "discord/cpp/discord.h"
 
 constexpr unsigned int patchOneStart = 0x4C14E0;
 constexpr unsigned char patchOne[] = {
@@ -61,11 +63,16 @@ int selectedIndex = 0;
 
 std::filesystem::path configFilePath;
 
+discord::Core* core{};
+
 LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam);
 void OpenAdapterSelectDialog(HINSTANCE hInstDll);
 bool LoadPrior();
 void LoadAdapters();
 void Patch(PIP_ADAPTER_UNICAST_ADDRESS_LH addr);
+void Discord();
+
+auto exiting = false;
 
 extern __declspec(dllexport) INT APIENTRY DllMain(HINSTANCE hInstDll, DWORD fdwReason, LPVOID lpvReserved)
 {
@@ -82,10 +89,39 @@ extern __declspec(dllexport) INT APIENTRY DllMain(HINSTANCE hInstDll, DWORD fdwR
             if(!LoadPrior())
                 OpenAdapterSelectDialog(hInstDll);
             delete(pAddresses);
+
+            auto hThread = CreateThread(0, 0, (LPTHREAD_START_ROUTINE)Discord, 0, 0, 0);
+
 	        break;
         }
+        case DLL_PROCESS_DETACH:
+            exiting = true;
+            break;
     }
     return TRUE;
+}
+
+void Discord()
+{
+    discord::ClientId CLIENT_ID(983113098980364359);
+    auto result = discord::Core::Create(CLIENT_ID, DiscordCreateFlags_Default, &core);
+
+    discord::Activity activity{};
+    activity.SetType(discord::ActivityType::Playing);
+    activity.GetAssets().SetLargeImage("raymanmarena");
+    activity.GetAssets().SetLargeText("Join the community: https://discord.gg/qp5S83ZhgW");
+    activity.GetAssets().SetSmallText("Join the community: https://discord.gg/qp5S83ZhgW");
+    activity.GetTimestamps().SetStart(std::time(nullptr));
+    core->ActivityManager().UpdateActivity(activity, [](discord::Result result) {
+
+    });
+
+    while (!exiting)
+	{
+		core->RunCallbacks();
+        const auto delay = 5000;
+		std::this_thread::sleep_for(std::chrono::milliseconds(delay));
+	}
 }
 
 bool LoadPrior()
