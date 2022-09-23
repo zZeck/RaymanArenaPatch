@@ -8,7 +8,11 @@ Copy the discord sdk into a directory named discord in the root of this repo.
 
 In the visual studio native tools command prompt (or similar environment):
 
+Debug
 cl.exe /std:c++17 /Zi /LD discord/cpp/*.cpp patch.cpp /I\discord\cpp\  /link /OUT:arenapatch.asi user32.lib IPHLPAPI.lib Ws2_32.lib discord/lib/x86/discord_game_sdk.dll.lib
+
+Release
+cl.exe /std:c++17 /LD discord/cpp/*.cpp patch.cpp /I\discord\cpp\   /link /OUT:arenapatch.asi user32.lib IPHLPAPI.lib Ws2_32.lib discord/lib/x86/discord_game_sdk.dll.lib
 
 Use [Ultimate Asi Loader](https://github.com/ThirteenAG/Ultimate-ASI-Loader), with rayman arena and put arenapatch.asi into the plugins directory.
 
