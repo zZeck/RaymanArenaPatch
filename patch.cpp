@@ -58,6 +58,8 @@ constexpr unsigned char patchTwo[] = {
 };
 constexpr unsigned int patchTwoIpLocation = 0x4C13B6;
 
+char *level = (char*)0x8B83A1;
+
 IP_ADAPTER_ADDRESSES *pAddresses;
 int selectedIndex = 0;
 
@@ -71,6 +73,7 @@ bool LoadPrior();
 void LoadAdapters();
 void Patch(PIP_ADAPTER_UNICAST_ADDRESS_LH addr);
 void Discord();
+const char* LevelToName();
 
 auto exiting = false;
 
@@ -122,10 +125,52 @@ void Discord()
 
     while (!exiting)
 	{
+        activity.SetDetails(LevelToName());
+        core->ActivityManager().UpdateActivity(activity, [](discord::Result result) {
+
+        });
+
 		core->RunCallbacks();
         const auto delay = 5000;
 		std::this_thread::sleep_for(std::chrono::milliseconds(delay));
 	}
+}
+
+const char* LevelToName()
+{
+    if(strcmp(level, "1shadow") == 0) return "Shadow Plain";
+    if(strcmp(level, "1shrine") == 0) return "Rise & Shrine";
+    if(strcmp(level, "1sunset") == 0) return "Sunset Coast";
+    
+    if(strcmp(level, "2haunted") == 0) return "Haunted Yard";
+    if(strcmp(level, "2palm") == 0) return "Palm Beach";
+    if(strcmp(level, "2timber") == 0) return "Timber Wood";
+    
+    if(strcmp(level, "3coconut") == 0) return "Coconut Island";
+    if(strcmp(level, "3ly") == 0) return "Ly's Palace";
+    if(strcmp(level, "3spell") == 0) return "Spellbound Forest";
+    
+    if(strcmp(level, "4forgot") == 0) return "Forgotten Dungeon";
+    if(strcmp(level, "4gem") == 0) return "Gemstone Temple";
+    if(strcmp(level, "4ghastly") == 0) return "Ghastly Trees";
+    
+    if(strcmp(level, "crypt1") == 0) return "First Ruins";
+    if(strcmp(level, "crypt2") == 0) return "Nebulous Tower";
+    if(strcmp(level, "crypt3") == 0) return "Dark Sewer";
+    
+    if(strcmp(level, "factory1") == 0) return "Pipe Maze";
+    if(strcmp(level, "factory2") == 0) return "Lava Factory";
+    if(strcmp(level, "factory3") == 0) return "Electric Final";
+    
+    if(strcmp(level, "lagoon1") == 0) return "Dawn Sand";
+    if(strcmp(level, "lagoon2") == 0) return "Water Canyon";
+    if(strcmp(level, "lagoon3") == 0) return "Thousand Waterfalls";
+    
+    if(strcmp(level, "pirate1") == 0) return "Forest Jump";
+    if(strcmp(level, "pirate2") == 0) return "Zenith Harbour";
+    if(strcmp(level, "pirate3") == 0) return "Treasure Ship";
+
+    return "Menu";
 }
 
 bool LoadPrior()
